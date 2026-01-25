@@ -46,4 +46,19 @@ Task.hasMany(UserTask, { foreignKey: 'task_id', sourceKey: 'task_id', as: 'compl
 
 // UserTask associations
 UserTask.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
-UserTask.b
+UserTask.belongsTo(Task, { foreignKey: 'task_id', targetKey: 'task_id', as: 'task' });
+
+// Session associations
+Session.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+// ActivityLog associations
+ActivityLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+// Referral associations
+Referral.belongsTo(User, { foreignKey: 'referrer_id', as: 'referrer' });
+Referral.belongsTo(User, { foreignKey: 'referred_id', as: 'referred' });
+
+// WalletConnection associations
+WalletConnection.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+module.exports = db;
