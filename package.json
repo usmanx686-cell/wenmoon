@@ -7,10 +7,9 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "test": "jest",
-    "migrate": "node src/db/migrations/migrate.js",
-    "seed": "node src/db/seeders/seed.js",
     "lint": "eslint src/**/*.js",
-    "format": "prettier --write src/**/*.js"
+    "format": "prettier --write src/**/*.js",
+    "seed": "node src/db/seeders/seed.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -29,7 +28,6 @@
     "axios": "^1.4.0",
     "redis": "^4.6.7",
     "geoip-lite": "^1.4.7",
-    "user-agent": "^1.0.7",
     "uuid": "^9.0.0",
     "moment": "^2.29.4",
     "winston": "^3.9.0",
@@ -39,7 +37,8 @@
     "multer": "^1.4.5-lts.1",
     "sharp": "^0.32.1",
     "swagger-ui-express": "^4.6.3",
-    "yaml": "^2.3.1"
+    "yaml": "^2.3.1",
+    "request-ip": "^3.3.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22",
