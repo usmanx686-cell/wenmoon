@@ -21,6 +21,12 @@ const sequelize = new Sequelize(
         require: true,
         rejectUnauthorized: false
       } : false
+    },
+    define: {
+      timestamps: true,
+      underscored: true,
+      createdAt: 'created_at',
+      updatedAt: 'updated_at'
     }
   }
 );
@@ -29,14 +35,28 @@ const sequelize = new Sequelize(
 const testConnection = async () => {
   try {
     await sequelize.authenticate();
-    logger.info('Database connection established successfully.');
+    logger.info('✅ Database connection established successfully');
+    return true;
   } catch (error) {
-    logger.error('Unable to connect to database:', error);
-    throw error;
+    logger.error('❌ Unable to connect to database:', error);
+    return false;
+  }
+};
+
+// Sync database (for development)
+const syncDatabase = async () => {
+  try {
+    await sequelize.sync({ alter: true });
+    logger.info('📊 Database synced successfully');
+    return true;
+  } catch (error) {
+    logger.error('❌ Database sync failed:', error);
+    return false;
   }
 };
 
 module.exports = {
   sequelize,
-  testConnection
+  testConnection,
+  syncDatabase
 };
