@@ -6,16 +6,19 @@ const xss = require('xss-clean');
 const userAgent = require('express-useragent');
 const logger = require('./utils/logger');
 
-// Security middleware
+// Import middleware
 const securityMiddleware = require('./middleware/security');
-const rateLimitMiddleware = require('./middleware/rateLimit');
 const ipLimitMiddleware = require('./middleware/ipLimit');
+const rateLimitMiddleware = require('./middleware/rateLimit');
+const errorHandler = require('./middleware/errorHandler');
 
-// Routes
+// Import routes
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const taskRoutes = require('./routes/taskRoutes');
+const moonPointRoutes = require('./routes/moonPointRoutes');
 const securityRoutes = require('./routes/securityRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -23,15 +26,29 @@ const app = express();
 app.set('trust proxy', true);
 
 // Security headers
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+            scriptSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://hcaptcha.com", "https://*.hcaptcha.com"],
+            frameSrc: ["'self'", "https://hcaptcha.com", "https://*.hcaptcha.com"],
+            connectSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"]
+        }
+    }
+}));
 
 // Enable CORS
 app.use(cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:8080',
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Fingerprint', 'X-Client-Version']
 }));
 
-// Body parser
+// Body parser with limits
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
@@ -44,49 +61,93 @@ app.use(mongoSanitize());
 // Data sanitization against XSS
 app.use(xss());
 
-// Security middleware
+// Request logging middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+    const originalSend = res.send;
+    
+    res.send = function(body) {
+        const duration = Date.now() - start;
+        const message = `${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms`;
+        
+        if (res.statusCode >= 400) {
+            logger.warn(message);
+        } else {
+            logger.info(message);
+        }
+        
+        return originalSend.call(this, body);
+    };
+    
+    next();
+});
+
+// IP validation middleware
+app.use(ipLimitMiddleware.validateIP);
+
+// Bot detection middleware
 app.use(securityMiddleware.detectBot);
+
+// Request validation middleware
 app.use(securityMiddleware.validateRequest);
 
-// Rate limiting
-app.use('/api/auth', rateLimitMiddleware.authLimiter);
-app.use('/api/tasks', rateLimitMiddleware.taskLimiter);
+// Rate limiting (applied to all routes)
+app.use(rateLimitMiddleware.genericLimiter);
 
-// IP limiting middleware
+// IP limiting for sensitive routes
 app.use('/api/auth/signup', ipLimitMiddleware.checkIPLimit);
 app.use('/api/auth/social', ipLimitMiddleware.checkIPLimit);
 
-// Routes
-app.use('/api/auth', authRoutes);
+// Slowing down for suspicious activity
+app.use(rateLimitMiddleware.slowDownMiddleware);
+
+// Routes with their own rate limits
+app.use('/api/auth', rateLimitMiddleware.authLimiter, authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/tasks', taskRoutes);
+app.use('/api/tasks', rateLimitMiddleware.taskLimiter, taskRoutes);
+app.use('/api/moonpoints', moonPointRoutes);
 app.use('/api/security', securityRoutes);
 
-// Health check
+// Admin routes with IP whitelist
+app.use('/api/admin', ipLimitMiddleware.checkAdminIP, adminRoutes);
+
+// Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'healthy',
-        timestamp: new Date().toISOString()
+        service: 'wenmoon-backend',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        nodeVersion: process.version
+    });
+});
+
+// System info endpoint (protected)
+app.get('/api/system/info', securityMiddleware.requireAPIKey, (req, res) => {
+    res.status(200).json({
+        status: 'online',
+        version: '1.0.0',
+        environment: process.env.NODE_ENV,
+        security: {
+            ipLimiting: process.env.IP_LIMITING_ENABLED === 'true',
+            maxUsersPerIP: parseInt(process.env.MAX_USERS_PER_IP || '5'),
+            captchaEnabled: process.env.CAPTCHA_ENABLED === 'true'
+        }
     });
 });
 
 // 404 handler
 app.use('*', (req, res) => {
+    logger.warn(`404 Route not found: ${req.method} ${req.originalUrl}`);
     res.status(404).json({
         status: 'error',
-        message: 'Route not found'
+        message: 'Route not found',
+        code: 'ROUTE_NOT_FOUND'
     });
 });
 
 // Global error handler
-app.use((err, req, res, next) => {
-    logger.error('Global error handler:', err);
-    
-    res.status(err.statusCode || 500).json({
-        status: 'error',
-        message: err.message || 'Internal server error',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    });
-});
+app.use(errorHandler);
 
 module.exports = app;
